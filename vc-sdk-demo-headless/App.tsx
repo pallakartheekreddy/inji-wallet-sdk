@@ -13,6 +13,8 @@ import { ShareVCProcessingScreen } from './src/screens/ShareVCProcessingScreen';
 import { ShareVCSuccessScreen } from './src/screens/ShareVCSuccessScreen';
 import { ShareVCErrorScreen } from './src/screens/ShareVCErrorScreen';
 import { DeviceRegistrationScreen } from './src/screens/DeviceRegistrationScreen';
+
+const SUNBIRD_HOST = 'https://age.98.70.36.106.sslip.io';
 import { CustomAuthWebView } from './src/components/CustomAuthWebView';
 
 type Screen =
@@ -62,20 +64,24 @@ function AppContent() {
       console.log('Initializing VC SDK Headless...');
 
       // Initialize the SDK
+      // Sunbird RC reference deployment: issuer directory (/v1/mimoto/issuers),
+      // OID4VCI issuer and Keycloak realm all on one host. Replace SUNBIRD_HOST
+      // to point the app at another deployment.
       await VCSDK.init({
         appId: 'vc-sdk-demo-headless',
         network: {
-          baseUrl: 'https://injiweb.credenciaisverificaveis-dev.dataprev.gov.br',
-          notificationBaseUrl: 'https://injiweb.credenciaisverificaveis-dev.dataprev.gov.br',
+          baseUrl: SUNBIRD_HOST,
+          notificationBaseUrl: SUNBIRD_HOST,
           timeout: 30000,
           oauth: {
-            authorizationUrl: 'https://sso.staging.acesso.gov.br/authorize',
-            tokenUrl: 'https://sso.staging.acesso.gov.br/token',
-            userInfoUrl: 'https://sso.staging.acesso.gov.br/userinfo/',
-            clientId: 'h-credenciaisverificaveis-dev.dataprev.gov.br',
-            clientSecret: process.env.OAUTH_CLIENT_SECRET || '',
+            authorizationUrl: `${SUNBIRD_HOST}/auth/realms/age/protocol/openid-connect/auth`,
+            tokenUrl: `${SUNBIRD_HOST}/auth/realms/age/protocol/openid-connect/token`,
+            userInfoUrl: `${SUNBIRD_HOST}/auth/realms/age/protocol/openid-connect/userinfo`,
+            // Public PKCE client (no secret) registered in the age realm.
+            clientId: 'inji-sdk-demo',
+            clientSecret: '',
             redirectUri: 'http://localhost:3001/redirect',
-            scopes: ['openid', 'email', 'profile', 'govbr_confiabilidades'],
+            scopes: ['openid', 'profile', 'age-verification-credential'],
           },
         },
         storage: {

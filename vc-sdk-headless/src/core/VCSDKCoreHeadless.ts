@@ -422,8 +422,15 @@ export class VCSDKCoreHeadless {
                 const credTypeId = credType.id || '';
                 const credTypeName = credType.name || '';
 
-                // Simple matching logic
-                if (credTypeId.includes(pattern.pattern) || pattern.pattern.includes(credTypeId)) {
+                // Match the requested type pattern against the configuration id and,
+                // for issuers whose ids are opaque (e.g. did:schema:…_ldp_vc), against
+                // the W3C types the configuration issues.
+                const definitionTypes: string[] = credType.credentialDefinitionTypes || [];
+                if (
+                  credTypeId.includes(pattern.pattern) ||
+                  pattern.pattern.includes(credTypeId) ||
+                  definitionTypes.some((t: string) => t === pattern.pattern || new RegExp(pattern.pattern).test(t))
+                ) {
                   const displayLogo = credType.display?.[0]?.logo?.url;
 
                   matchedCredentials.push({

@@ -14,6 +14,7 @@ import { CredentialService } from './CredentialService';
 import { JSONPath } from 'jsonpath-plus';
 import { Buffer } from 'buffer';
 import * as ed from '@noble/ed25519';
+import { holderKey, holderSign } from './HolderKey';
 import { sha256 } from '@noble/hashes/sha256';
 import bs58 from 'bs58';
 import { NativeModules, Platform } from 'react-native';
@@ -380,10 +381,11 @@ export class ShareVCService {
     try {
       console.log('[ShareVC] Constructing Verifiable Presentation');
 
-      if (!this.privateKey) {
-        this.privateKey = ed.utils.randomPrivateKey();
-        this.publicKey = await ed.getPublicKeyAsync(this.privateKey);
-      }
+      // The persistent holder key the credentials were issued to (HolderKey.ts):
+      // a fresh key here would present someone else's binding.
+      const holder = await holderKey();
+      this.privateKey = holder.privateKey;
+      this.publicKey = holder.publicKey;
 
       const credentialMapping: Array<{ inputDescriptorId: string; vc: VC }> = [];
       Object.entries(selectedVCs).forEach(([inputDescriptorId, vcs]) => {
@@ -421,7 +423,7 @@ export class ShareVCService {
 
       // Build holder DID from public key (same format as inji-wallet: did:jwk:<base64url>#0)
       const publicJwk = JSON.stringify({ kty: 'OKP', crv: 'Ed25519', x: Buffer.from(this.publicKey!).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '') });
-      const holderDID = `did:jwk:${Buffer.from(publicJwk).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')}#0`;
+      const holderDID = holder.kid;
 
       const jsonld = require('jsonld');
 
@@ -467,7 +469,9 @@ export class ShareVCService {
         type: 'Ed25519Signature2020',
         created,
         challenge: authRequest.nonce,
-        domain: 'OpenID4VP',
+        // The verifier's client_id: what binds this proof to the verifier that
+        // asked (OpenID4VP); a constant here lets any verifier replay it.
+        domain: authRequest.client_id,
         verificationMethod: holderDID,
         proofPurpose: 'authentication',
       };
@@ -489,7 +493,9 @@ export class ShareVCService {
             type: 'Ed25519Signature2020',
             created,
             verificationMethod: holderDID,
-            domain: 'OpenID4VP',
+            // The verifier's client_id: what binds this proof to the verifier that
+        // asked (OpenID4VP); a constant here lets any verifier replay it.
+        domain: authRequest.client_id,
             challenge: authRequest.nonce,
             proofPurpose: 'authentication',
             proofValue: 'z_placeholder',
@@ -529,7 +535,7 @@ export class ShareVCService {
         signingInput = Buffer.concat([Buffer.from(proofHash), Buffer.from(docHash)]);
       }
 
-      const signature = await ed.signAsync(signingInput, this.privateKey!);
+      const signature = await holderSign(signingInput);
       const proofValue = 'z' + bs58.encode(signature);
 
       const { '@context': _ctx, ...proofWithoutContext } = proofOptions;
@@ -562,10 +568,13 @@ export class ShareVCService {
       const { _credentialMapping, ...vpToken } = vp as any;
 
       const credentialMapping = _credentialMapping || [];
+      // vp_token is one VP, so each descriptor points at it ('$') and nests to
+      // its credential (DIF Presentation Exchange §path_nested).
       const descriptor_map = credentialMapping.map((item: any, index: number) => ({
         id: item.inputDescriptorId,
         format: 'ldp_vp',
-        path: `$.verifiableCredential[${index}]`,
+        path: '$',
+        path_nested: { id: item.inputDescriptorId, format: 'ldp_vc', path: `$.verifiableCredential[${index}]` },
       }));
 
       const responsePayload: Record<string, string> = {

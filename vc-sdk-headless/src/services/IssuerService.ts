@@ -142,7 +142,12 @@ export class IssuerService extends EventEmitter3 {
       if (wellKnownConfig.credential_configurations_supported) {
         const credentialTypes: CredentialType[] = Object.entries(
           wellKnownConfig.credential_configurations_supported
-        ).map(([typeId, config]: [string, any]) => {
+        )
+          // This SDK requests, stores and presents ldp_vc only; an issuer that also
+          // publishes SD-JWT or mdoc configurations would otherwise list types that
+          // can never be downloaded.
+          .filter(([, config]: [string, any]) => !config?.format || config.format === 'ldp_vc')
+          .map(([typeId, config]: [string, any]) => {
           // Extract the credential_definition.type array (e.g., ["VerifiableCredential", "CCIR"])
           const credentialDefinitionTypes = config.credential_definition?.type || [];
           console.log(`[IssuerService] Credential type ${typeId}:`, {

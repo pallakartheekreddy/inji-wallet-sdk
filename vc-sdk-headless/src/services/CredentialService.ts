@@ -440,6 +440,26 @@ export class CredentialService {
     return `${encodedHeader}.${encodedPayload}.${signature}`;
   }
 
+  /**
+   * A fresh c_nonce from the issuer's nonce_endpoint (OID4VCI 1.0 §7), or null
+   * when the issuer publishes none or the call fails.
+   */
+  private async fetchIssuerNonce(issuer: any): Promise<string | null> {
+    try {
+      const host = issuer.credential_issuer_host || issuer.credential_issuer || issuer.credentialIssuer || issuer.issuerUrl;
+      if (!host) return null;
+      const wellKnown = await (await fetch(`${String(host).replace(/\/+$/, '')}/.well-known/openid-credential-issuer`)).json();
+      if (!wellKnown?.nonce_endpoint) return null;
+      const res = await fetch(wellKnown.nonce_endpoint, { method: 'POST' });
+      if (!res.ok) return null;
+      const body = await res.json();
+      return typeof body?.c_nonce === 'string' ? body.c_nonce : null;
+    } catch (e) {
+      console.log('[CREDENTIAL_REQUEST] nonce_endpoint unavailable:', (e as Error)?.message);
+      return null;
+    }
+  }
+
   private async generateProperJWTProof(accessToken: string, issuer: any): Promise<string> {
     console.log('[CREDENTIAL_REQUEST] Generating JWT using NativeCryptoJWT module...');
 
@@ -454,7 +474,11 @@ export class CredentialService {
           const payload = tokenParts[1];
           const paddedPayload = payload + '='.repeat(4 - payload.length % 4);
           const decodedToken = JSON.parse(Buffer.from(paddedPayload, 'base64').toString());
-          cNonce = decodedToken.c_nonce || decodedToken.nonce || `generated-nonce-${Date.now()}`;
+          // A c_nonce carried in the access token (issuers that put it there)
+          // wins. Otherwise ask the issuer's nonce_endpoint (OID4VCI 1.0): an
+          // OIDC token's `nonce` is the login request's nonce, not a c_nonce,
+          // and an issuer that checks proof freshness rejects it.
+          cNonce = decodedToken.c_nonce || (await this.fetchIssuerNonce(issuer)) || decodedToken.nonce || `generated-nonce-${Date.now()}`;
         } else {
           cNonce = `fallback-nonce-${Date.now()}`;
         }
@@ -499,8 +523,11 @@ export class CredentialService {
 
     // Use the NativeCryptoJWT module
     try {
-      const { nativeCryptoJWT } = require('./NativeCryptoJWT');
-      const jwt = await nativeCryptoJWT.createJWT(payload);
+      // Signed with the persistent holder key (EdDSA, did:jwk kid), the same key
+      // presentations are signed with, so the issued credential is bound to the
+      // holder that will present it. See HolderKey.ts.
+      const { holderProofJwt } = require('./HolderKey');
+      const jwt = await holderProofJwt(payload);
 
       console.log('[CREDENTIAL_REQUEST] ✅ JWT created with NativeCryptoJWT module');
       return jwt;

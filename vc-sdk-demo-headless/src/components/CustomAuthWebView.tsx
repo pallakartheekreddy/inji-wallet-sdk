@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { View, StyleSheet, Alert, ActivityIndicator, Text } from 'react-native';
 import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { VCSDK } from 'vc-sdk-headless';
 
 interface CustomAuthWebViewProps {
@@ -151,23 +152,25 @@ export const CustomAuthWebView: React.FC<CustomAuthWebViewProps> = ({
       const clientId = oauthConfig?.clientId || 'h-credenciaisverificaveis-dev.dataprev.gov.br';
       const clientSecret = oauthConfig?.clientSecret || process.env.OAUTH_CLIENT_SECRET || '';
 
-      // Create Basic Auth header from clientId and clientSecret
-      const basicAuth = btoa(`${clientId}:${clientSecret}`);
+      // Confidential clients authenticate with Basic; a public PKCE client
+      // (no secret) sends its client_id in the body instead (RFC 6749 §2.3.1,
+      // RFC 7636), which is what a wallet app on a phone should be.
+      const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' };
+      const form: Record<string, string> = {
+        grant_type: 'authorization_code',
+        code: code,
+        code_verifier: pkceData.codeVerifier,
+        redirect_uri: redirectUri,
+      };
+      if (clientSecret) headers['Authorization'] = `Basic ${btoa(`${clientId}:${clientSecret}`)}`;
+      else form.client_id = clientId;
 
       console.log('[AUTH WEBVIEW] Using token URL:', tokenUrl);
 
       const tokenResponse = await fetch(tokenUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Authorization': `Basic ${basicAuth}`,
-        },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          code: code,
-          code_verifier: pkceData.codeVerifier,
-          redirect_uri: redirectUri
-        }).toString(),
+        headers,
+        body: new URLSearchParams(form).toString(),
       });
 
       console.log('[AUTH WEBVIEW] Token response status:', tokenResponse.status);
@@ -181,13 +184,21 @@ export const CustomAuthWebView: React.FC<CustomAuthWebViewProps> = ({
       const tokenData = await tokenResponse.json();
       console.log('[AUTH WEBVIEW] Token received successfully');
 
-      // Save token data to shared preferences
-      await AsyncStorage.setItem('access_token', tokenData.access_token);
-      await AsyncStorage.setItem('id_token', tokenData.id_token);
-      await AsyncStorage.setItem('token_type', tokenData.token_type);
-      await AsyncStorage.setItem('expires_in', tokenData.expires_in.toString());
-      await AsyncStorage.setItem('scope', tokenData.scope);
-      await AsyncStorage.setItem('token_data', JSON.stringify(tokenData));
+      // Save token data to shared preferences. AsyncStorage rejects undefined,
+      // and not every provider returns every field.
+      const save = (k: string, v: unknown) => AsyncStorage.setItem(k, v == null ? '' : String(v));
+      await save('access_token', tokenData.access_token);
+      await save('id_token', tokenData.id_token);
+      await save('token_type', tokenData.token_type);
+      await save('expires_in', tokenData.expires_in);
+      await save('scope', tokenData.scope);
+      await save('token_data', JSON.stringify(tokenData));
+      // The SDK reads the token from SecureStore (AuthIntegrationService.getAccessToken);
+      // without this every download fails with "No access token available".
+      await SecureStore.setItemAsync('access_token', tokenData.access_token);
+      if (tokenData.expires_in) {
+        await AsyncStorage.setItem('expires_at', String(Date.now() + Number(tokenData.expires_in) * 1000));
+      }
 
       console.log('[AUTH WEBVIEW] Token data saved to shared preferences');
 
@@ -229,13 +240,14 @@ export const CustomAuthWebView: React.FC<CustomAuthWebViewProps> = ({
       console.log('[AUTH WEBVIEW] User info received successfully:', userData.name, userData.email);
 
       // Save user data to shared preferences
-      await AsyncStorage.setItem('user_sub', userData.sub);
-      await AsyncStorage.setItem('user_name', userData.name);
-      await AsyncStorage.setItem('user_social_name', userData.social_name || '');
-      await AsyncStorage.setItem('user_profile', userData.profile);
-      await AsyncStorage.setItem('user_picture', userData.picture);
-      await AsyncStorage.setItem('user_email', userData.email);
-      await AsyncStorage.setItem('user_email_verified', userData.email_verified.toString());
+      const keep = (k: string, v: unknown) => AsyncStorage.setItem(k, v == null ? '' : String(v));
+      await keep('user_sub', userData.sub);
+      await keep('user_name', userData.name ?? userData.preferred_username);
+      await keep('user_social_name', userData.social_name);
+      await keep('user_profile', userData.profile);
+      await keep('user_picture', userData.picture);
+      await keep('user_email', userData.email);
+      await keep('user_email_verified', userData.email_verified);
       await AsyncStorage.setItem('user_data', JSON.stringify(userData));
 
       console.log('[AUTH WEBVIEW] User data saved to shared preferences');
