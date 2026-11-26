@@ -622,11 +622,20 @@ export class VCSDKCoreHeadless {
       },
 
       /**
-       * Decline sharing (user cancelled)
+       * Decline sharing (user cancelled). With the request URL, also tells the
+       * verifier (OpenID4VP error response, access_denied) so it can stop
+       * waiting; without it, only the local event is emitted.
        * Emits: share:userDeclined
        */
-      declineShare: () => {
+      declineShare: async (shareUrl?: string): Promise<void> => {
         this.events.emitShareUserDeclined();
+        if (!shareUrl) return;
+        try {
+          const authRequest = await this.services!.shareVC.parseAuthorizationRequest(shareUrl);
+          await this.services!.shareVC.sendErrorResponse(authRequest);
+        } catch (e) {
+          console.log('[VCSDKHeadless] Decline not reported to verifier:', (e as Error)?.message);
+        }
       },
     };
   }

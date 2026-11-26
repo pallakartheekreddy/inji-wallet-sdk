@@ -291,7 +291,8 @@ function AppContent() {
 
   const handleConsentDecline = () => {
     console.log('[App] User declined consent');
-    VCSDK.share.declineShare();
+    // Reported to the verifier too, so it can show "declined" instead of waiting.
+    VCSDK.share.declineShare(shareUrl);
     setCurrentScreen('home');
   };
 
@@ -346,7 +347,8 @@ function AppContent() {
         shareUrl={shareUrl}
         onApprove={handleConsentApprove}
         onDecline={handleConsentDecline}
-        onBack={() => setCurrentScreen('home')}
+        // Leaving the consent screen is declining: nothing will be shared.
+        onBack={handleConsentDecline}
       />
     );
   }

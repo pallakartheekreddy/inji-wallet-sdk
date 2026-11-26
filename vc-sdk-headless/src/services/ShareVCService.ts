@@ -92,6 +92,40 @@ export class ShareVCService {
    * Parse OpenID4VP authorization request from URL
    * Supports both direct presentation_definition and presentation_definition_uri
    */
+  /**
+   * Tells the verifier the holder did not share (OpenID4VP error response):
+   * POSTs `error` (default access_denied) and `state` to the request's
+   * response_uri, as direct_post does for a presentation. Without it the
+   * verifier cannot tell a refusal from a holder who never answered, and keeps
+   * waiting until its request expires.
+   *
+   * Never throws: a verifier that cannot be reached must not block the user
+   * leaving the consent screen.
+   */
+  async sendErrorResponse(
+    authRequest: AuthorizationRequest,
+    error = 'access_denied',
+    description = 'The holder declined to share credentials',
+  ): Promise<boolean> {
+    if (!authRequest?.redirect_uri || (authRequest.response_mode && authRequest.response_mode !== 'direct_post')) {
+      return false;
+    }
+    const form: Record<string, string> = { error, error_description: description };
+    if (authRequest.state) form.state = authRequest.state;
+    try {
+      const response = await fetch(authRequest.redirect_uri, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(form).toString(),
+      });
+      console.log('[ShareVC] Error response sent to verifier:', error, response.status);
+      return true;
+    } catch (e) {
+      console.log('[ShareVC] Could not send error response:', (e as Error)?.message);
+      return false;
+    }
+  }
+
   async parseAuthorizationRequest(url: string): Promise<AuthorizationRequest> {
     try {
       console.log('[ShareVC] Parsing authorization request from URL:', url);
