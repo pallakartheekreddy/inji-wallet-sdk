@@ -21,6 +21,10 @@ export const CustomAuthWebView: React.FC<CustomAuthWebViewProps> = ({
   const webViewRef = useRef<WebView>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasProcessedCode, setHasProcessedCode] = useState(false);
+  // Synchronous guard: the redirect can reach both onShouldStartLoadWithRequest
+  // and onNavigationStateChange before a state update lands, and exchanging the
+  // same code twice fails the second time.
+  const processedRef = useRef(false);
   const [pkceData, setPkceData] = useState<{codeVerifier: string, codeChallenge: string} | null>(null);
 
   // Get redirect URI from SDK config (used to watch for OAuth callback)
@@ -253,9 +257,17 @@ export const CustomAuthWebView: React.FC<CustomAuthWebViewProps> = ({
       console.log('[AUTH WEBVIEW] User data saved to shared preferences');
 
       // Show success and call onSuccess
+      // Providers differ in what userinfo returns (a data-minimising realm may
+      // send only `sub`); show what is there rather than "undefined".
+      const displayName = userData.name || userData.preferred_username || '';
+      const lines = [
+        displayName ? `Bem-vindo(a) ${displayName}!` : 'Bem-vindo(a)!',
+        ...(userData.email ? [`Email: ${userData.email}`] : []),
+        'Dados do perfil salvos com sucesso.',
+      ];
       Alert.alert(
         'Autenticação bem-sucedida!',
-        `Bem-vindo(a) ${userData.name}!\n\nEmail: ${userData.email}\nDados do perfil salvos com sucesso.`,
+        lines.join('\n'),
         [{ text: 'Continuar', onPress: () => onSuccess({ userData, accessToken }) }]
       );
 
@@ -265,13 +277,25 @@ export const CustomAuthWebView: React.FC<CustomAuthWebViewProps> = ({
     }
   };
 
+  // Handle the redirect ourselves and stop the WebView loading it: the
+  // redirect URI (e.g. http://localhost:3001/redirect) is not a real page, and
+  // loading it shows an error screen (ERR_CLEARTEXT_NOT_PERMITTED on Android).
+  const onShouldStartLoadWithRequest = (request: any) => {
+    if (typeof request?.url === 'string' && request.url.startsWith(getRedirectUri())) {
+      onNavigationStateChange({ url: request.url });
+      return false;
+    }
+    return true;
+  };
+
   const onNavigationStateChange = async (navState: any) => {
     const { url } = navState;
     console.log('[AUTH WEBVIEW] WebView navigated to:', url);
 
     const redirectUri = getRedirectUri();
-    if (url.startsWith(redirectUri) && !hasProcessedCode) {
+    if (url.startsWith(redirectUri) && !processedRef.current) {
       console.log('[AUTH WEBVIEW] Redirect detected! URL:', url);
+      processedRef.current = true;
       setHasProcessedCode(true); // Prevent duplicate processing
 
       const params = extractQueryParams(url);
@@ -342,6 +366,7 @@ export const CustomAuthWebView: React.FC<CustomAuthWebViewProps> = ({
         ref={webViewRef}
         source={{ uri: getAuthUrl() }}
         onNavigationStateChange={onNavigationStateChange}
+        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         onLoadStart={onLoadStart}
         onLoadEnd={onLoadEnd}
         onHttpError={onWebViewError}
