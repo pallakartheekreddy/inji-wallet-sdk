@@ -97,6 +97,27 @@ npm run web
 
 ---
 
+## Configuration
+
+The issuer directory and the sign-in provider are set with environment variables,
+inlined into the app at build time. Copy `.env.example` to `.env.local`
+(git-ignored), fill in your deployment, and rebuild.
+
+| Variable | Purpose |
+|---|---|
+| `EXPO_PUBLIC_WALLET_BASE_URL` | Host serving the issuer directory, `GET {base}/v1/mimoto/issuers` |
+| `EXPO_PUBLIC_OAUTH_AUTHORIZATION_URL` | Authorization endpoint (authorization code + PKCE) |
+| `EXPO_PUBLIC_OAUTH_TOKEN_URL` | Token endpoint |
+| `EXPO_PUBLIC_OAUTH_USERINFO_URL` | UserInfo endpoint |
+| `EXPO_PUBLIC_OAUTH_CLIENT_ID` | OAuth client id (a public client; no secret is bundled) |
+| `EXPO_PUBLIC_OAUTH_REDIRECT_URI` | Redirect URI registered for that client |
+| `EXPO_PUBLIC_OAUTH_SCOPES` | Space-separated scopes; only ones the provider defines |
+
+Unset variables fall back to the original demo configuration. For a release APK,
+regenerate the JS bundle after changing them (delete
+`android/app/build/generated/assets/createBundleReleaseJsAndAssets`, or Gradle
+may reuse the previous bundle).
+
 ## Key Integration Points
 
 ### 1. SDK Initialization (SDKManager.ts)

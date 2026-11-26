@@ -14,7 +14,26 @@ import { ShareVCSuccessScreen } from './src/screens/ShareVCSuccessScreen';
 import { ShareVCErrorScreen } from './src/screens/ShareVCErrorScreen';
 import { DeviceRegistrationScreen } from './src/screens/DeviceRegistrationScreen';
 
-const SUNBIRD_HOST = 'https://age.98.70.36.106.sslip.io';
+// Deployment settings, from EXPO_PUBLIC_* environment variables (inlined at
+// build time; see .env.example). Unset values fall back to the original demo
+// configuration. Expo only inlines direct `process.env.EXPO_PUBLIC_…` reads.
+const WALLET_BASE_URL =
+  process.env.EXPO_PUBLIC_WALLET_BASE_URL || 'https://injiweb.credenciaisverificaveis-dev.dataprev.gov.br';
+const OAUTH = {
+  authorizationUrl: process.env.EXPO_PUBLIC_OAUTH_AUTHORIZATION_URL || 'https://sso.staging.acesso.gov.br/authorize',
+  tokenUrl: process.env.EXPO_PUBLIC_OAUTH_TOKEN_URL || 'https://sso.staging.acesso.gov.br/token',
+  userInfoUrl: process.env.EXPO_PUBLIC_OAUTH_USERINFO_URL || 'https://sso.staging.acesso.gov.br/userinfo/',
+  clientId: process.env.EXPO_PUBLIC_OAUTH_CLIENT_ID || 'h-credenciaisverificaveis-dev.dataprev.gov.br',
+  // Never an EXPO_PUBLIC_ variable: anything inlined is readable from the app.
+  // A wallet on a phone should be a public PKCE client and leave this empty.
+  clientSecret: process.env.OAUTH_CLIENT_SECRET || '',
+  redirectUri: process.env.EXPO_PUBLIC_OAUTH_REDIRECT_URI || 'http://localhost:3001/redirect',
+  // Space-separated. Request only scopes the authorization server defines:
+  // one unknown scope fails the whole request (invalid_scope).
+  scopes: (process.env.EXPO_PUBLIC_OAUTH_SCOPES || 'openid email profile govbr_confiabilidades')
+    .split(/\s+/)
+    .filter(Boolean),
+};
 import { CustomAuthWebView } from './src/components/CustomAuthWebView';
 
 type Screen =
@@ -64,27 +83,15 @@ function AppContent() {
       console.log('Initializing VC SDK Headless...');
 
       // Initialize the SDK
-      // Sunbird RC reference deployment: issuer directory (/v1/mimoto/issuers),
-      // OID4VCI issuer and Keycloak realm all on one host. Replace SUNBIRD_HOST
-      // to point the app at another deployment.
+      // Issuer directory (GET {baseUrl}/v1/mimoto/issuers) and OAuth provider,
+      // both from the deployment settings above.
       await VCSDK.init({
         appId: 'vc-sdk-demo-headless',
         network: {
-          baseUrl: SUNBIRD_HOST,
-          notificationBaseUrl: SUNBIRD_HOST,
+          baseUrl: WALLET_BASE_URL,
+          notificationBaseUrl: WALLET_BASE_URL,
           timeout: 30000,
-          oauth: {
-            authorizationUrl: `${SUNBIRD_HOST}/auth/realms/age/protocol/openid-connect/auth`,
-            tokenUrl: `${SUNBIRD_HOST}/auth/realms/age/protocol/openid-connect/token`,
-            userInfoUrl: `${SUNBIRD_HOST}/auth/realms/age/protocol/openid-connect/userinfo`,
-            // Public PKCE client (no secret) registered in the age realm.
-            clientId: 'inji-sdk-demo',
-            clientSecret: '',
-            redirectUri: 'http://localhost:3001/redirect',
-            // Only scopes the realm defines; Keycloak rejects the whole request
-            // (invalid_scope) if any one is unknown.
-            scopes: ['openid', 'age-verification-credential'],
-          },
+          oauth: OAUTH,
         },
         storage: {
           encrypted: true,
