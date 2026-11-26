@@ -81,7 +81,9 @@ function AppContent() {
             clientId: 'inji-sdk-demo',
             clientSecret: '',
             redirectUri: 'http://localhost:3001/redirect',
-            scopes: ['openid', 'profile', 'age-verification-credential'],
+            // Only scopes the realm defines; Keycloak rejects the whole request
+            // (invalid_scope) if any one is unknown.
+            scopes: ['openid', 'age-verification-credential'],
           },
         },
         storage: {
