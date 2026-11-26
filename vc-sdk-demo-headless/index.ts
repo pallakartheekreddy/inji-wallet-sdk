@@ -1,4 +1,14 @@
 import { registerRootComponent } from 'expo';
+import * as ExpoCrypto from 'expo-crypto';
+
+// A secure random source for libraries that expect WebCrypto's
+// crypto.getRandomValues (the SDK's storage encryption among them). React
+// Native has none; expo-crypto's is backed by the platform CSPRNG.
+const g: any = globalThis as any;
+g.crypto = g.crypto || {};
+if (typeof g.crypto.getRandomValues !== 'function') {
+  g.crypto.getRandomValues = (array: any) => ExpoCrypto.getRandomValues(array);
+}
 
 // Diagnostics: surface an exception thrown while App's modules load (before
 // React Native's own error reporting exists) instead of a bare
