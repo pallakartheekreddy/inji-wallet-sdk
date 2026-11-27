@@ -121,11 +121,9 @@ function AppContent() {
   const handleAuthSuccess = async (authData: any) => {
     console.log('[App] Authentication successful:', authData.userData?.name);
     setIsAuthenticated(true);
+    // The login screen has already greeted the user; a second alert here
+    // repeated it (and showed "undefined" when userinfo carries no name).
     setCurrentScreen('home');
-    Alert.alert(
-      'Autenticação bem-sucedida!',
-      `Bem-vindo(a) ${authData.userData?.name}!\n\nVocê está autenticado e pode agora baixar credenciais.`
-    );
   };
 
   const handleAuthError = (error: string) => {
